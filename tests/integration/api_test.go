@@ -83,6 +83,224 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func TestUtilityRoutes(t *testing.T) {
+	t.Run("returns health status", func(t *testing.T) {
+		resetDB(t)
+
+		resp, body := requestJSON(t, http.MethodGet, "/", nil)
+
+		expectStatus(t, resp, body, http.StatusOK)
+		health := decodeJSON[apiresponse.Health](t, body)
+		if health.Status != "ok" {
+			t.Fatalf("status = %q", health.Status)
+		}
+	})
+
+	t.Run("serves swagger UI", func(t *testing.T) {
+		resetDB(t)
+
+		resp, body := requestJSON(t, http.MethodGet, "/swagger", nil)
+
+		expectStatus(t, resp, body, http.StatusOK)
+	})
+
+	t.Run("returns not found for unknown routes", func(t *testing.T) {
+		resetDB(t)
+
+		resp, body := requestJSON(t, http.MethodGet, "/does-not-exist", nil)
+
+		expectStatus(t, resp, body, http.StatusNotFound)
+		expectError(t, body, "not_found", "")
+	})
+}
+
+func TestFundsAPI(t *testing.T) {
+	t.Run("creates a fund", func(t *testing.T) {
+		resetDB(t)
+		req := validCreateFundRequest("Titanbay Growth Fund II")
+
+		resp, body := requestJSON(t, http.MethodPost, "/funds", req)
+
+		expectStatus(t, resp, body, http.StatusCreated)
+		fund := decodeJSON[apiresponse.Fund](t, body)
+		requireFundMatchesCreateRequest(t, fund, req)
+	})
+
+	t.Run("updates a fund", func(t *testing.T) {
+		resetDB(t)
+		fund := createFund(t, "Titanbay Growth Fund I")
+		req := validUpdateFundRequest(fund.ID.String(), "Titanbay Growth Fund I")
+
+		resp, body := requestJSON(t, http.MethodPut, "/funds", req)
+
+		expectStatus(t, resp, body, http.StatusOK)
+		updated := decodeJSON[apiresponse.Fund](t, body)
+		requireFundMatchesUpdateRequest(t, updated, req)
+	})
+
+	t.Run("gets a fund by id", func(t *testing.T) {
+		resetDB(t)
+		fund := createFund(t, "Titanbay Growth Fund I")
+
+		resp, body := requestJSON(t, http.MethodGet, "/funds/"+fund.ID.String(), nil)
+
+		expectStatus(t, resp, body, http.StatusOK)
+		got := decodeJSON[apiresponse.Fund](t, body)
+		if got.ID != fund.ID {
+			t.Fatalf("id = %s, want %s", got.ID, fund.ID)
+		}
+	})
+
+	t.Run("lists funds as a raw array", func(t *testing.T) {
+		resetDB(t)
+		fund := createFund(t, "Titanbay Growth Fund III")
+
+		resp, body := requestJSON(t, http.MethodGet, "/funds", nil)
+
+		expectStatus(t, resp, body, http.StatusOK)
+		funds := decodeJSON[[]apiresponse.Fund](t, body)
+		requireContainsFund(t, funds, fund.ID)
+	})
+
+	t.Run("returns not found for missing fund", func(t *testing.T) {
+		resetDB(t)
+
+		resp, body := requestJSON(t, http.MethodGet, "/funds/"+uuid.NewString(), nil)
+
+		expectStatus(t, resp, body, http.StatusNotFound)
+		expectError(t, body, "not_found", "")
+	})
+
+	t.Run("rejects invalid status on create", func(t *testing.T) {
+		resetDB(t)
+		req := validCreateFundRequest("Broken Fund")
+		req.Status = "Draft"
+
+		resp, body := requestJSON(t, http.MethodPost, "/funds", req)
+
+		expectStatus(t, resp, body, http.StatusBadRequest)
+		expectError(t, body, "validation_error", "status")
+	})
+
+	t.Run("rejects invalid status on update", func(t *testing.T) {
+		resetDB(t)
+		fund := createFund(t, "Status Validation Fund")
+		req := validUpdateFundRequest(fund.ID.String(), "Status Validation Fund")
+		req.Status = "Draft"
+
+		resp, body := requestJSON(t, http.MethodPut, "/funds", req)
+
+		expectStatus(t, resp, body, http.StatusBadRequest)
+		expectError(t, body, "validation_error", "status")
+	})
+}
+
+func TestInvestorsAPI(t *testing.T) {
+	t.Run("creates an investor", func(t *testing.T) {
+		resetDB(t)
+		req := validCreateInvestorRequest("CalPERS", "privateequity@calpers.ca.gov")
+
+		resp, body := requestJSON(t, http.MethodPost, "/investors", req)
+
+		expectStatus(t, resp, body, http.StatusCreated)
+		investor := decodeJSON[apiresponse.Investor](t, body)
+		requireInvestorMatchesCreateRequest(t, investor, req)
+	})
+
+	t.Run("lists investors as a raw array", func(t *testing.T) {
+		resetDB(t)
+		investor := createInvestor(t, "Institution One", "one@example.com")
+
+		resp, body := requestJSON(t, http.MethodGet, "/investors", nil)
+
+		expectStatus(t, resp, body, http.StatusOK)
+		investors := decodeJSON[[]apiresponse.Investor](t, body)
+		requireContainsInvestor(t, investors, investor.ID)
+	})
+
+	t.Run("rejects duplicate email", func(t *testing.T) {
+		resetDB(t)
+		req := validCreateInvestorRequest("CalPERS", "privateequity@calpers.ca.gov")
+		createInvestor(t, req.Name, req.Email)
+		req.Name = "CalPERS Two"
+
+		resp, body := requestJSON(t, http.MethodPost, "/investors", req)
+
+		expectStatus(t, resp, body, http.StatusConflict)
+		expectError(t, body, "conflict", "")
+	})
+
+	t.Run("rejects invalid investor type", func(t *testing.T) {
+		resetDB(t)
+		req := validCreateInvestorRequest("Invalid Investor", "invalid@example.com")
+		req.InvestorType = "Draft"
+
+		resp, body := requestJSON(t, http.MethodPost, "/investors", req)
+
+		expectStatus(t, resp, body, http.StatusBadRequest)
+		expectError(t, body, "validation_error", "investor_type")
+	})
+}
+
+func TestInvestmentsAPI(t *testing.T) {
+	t.Run("creates an investment", func(t *testing.T) {
+		resetDB(t)
+		fund := createFund(t, "Titanbay Growth Fund I")
+		investor := createInvestor(t, "Goldman Sachs Asset Management", "investments@example.com")
+		req := validCreateInvestmentRequest(investor.ID.String(), "75000000.00", "2024-09-22")
+
+		resp, body := requestJSON(t, http.MethodPost, "/funds/"+fund.ID.String()+"/investments", req)
+
+		expectStatus(t, resp, body, http.StatusCreated)
+		investment := decodeJSON[apiresponse.Investment](t, body)
+		requireInvestmentMatchesCreateRequest(t, investment, fund.ID, req)
+	})
+
+	t.Run("lists investments for a fund as a raw array", func(t *testing.T) {
+		resetDB(t)
+		fund := createFund(t, "Titanbay Growth Fund III")
+		investor := createInvestor(t, "Institution One", "one@example.com")
+		investment := createInvestment(t, fund.ID.String(), investor.ID.String(), "1000000.00", "2024-01-01")
+
+		resp, body := requestJSON(t, http.MethodGet, "/funds/"+fund.ID.String()+"/investments", nil)
+
+		expectStatus(t, resp, body, http.StatusOK)
+		investments := decodeJSON[[]apiresponse.Investment](t, body)
+		requireContainsInvestment(t, investments, investment.ID)
+	})
+
+	t.Run("returns not found when creating with a missing investor", func(t *testing.T) {
+		resetDB(t)
+		fund := createFund(t, "Titanbay Growth Fund I")
+		req := validCreateInvestmentRequest(uuid.NewString(), "1000000.00", "2024-09-23")
+
+		resp, body := requestJSON(t, http.MethodPost, "/funds/"+fund.ID.String()+"/investments", req)
+
+		expectStatus(t, resp, body, http.StatusNotFound)
+		expectError(t, body, "not_found", "")
+	})
+
+	t.Run("returns not found when creating for a missing fund", func(t *testing.T) {
+		resetDB(t)
+		investor := createInvestor(t, "Goldman Sachs Asset Management", "investments@example.com")
+		req := validCreateInvestmentRequest(investor.ID.String(), "1000000.00", "2024-09-23")
+
+		resp, body := requestJSON(t, http.MethodPost, "/funds/"+uuid.NewString()+"/investments", req)
+
+		expectStatus(t, resp, body, http.StatusNotFound)
+		expectError(t, body, "not_found", "")
+	})
+
+	t.Run("returns not found when listing investments for a missing fund", func(t *testing.T) {
+		resetDB(t)
+
+		resp, body := requestJSON(t, http.MethodGet, "/funds/"+uuid.NewString()+"/investments", nil)
+
+		expectStatus(t, resp, body, http.StatusNotFound)
+		expectError(t, body, "not_found", "")
+	})
+}
+
 func resetDB(t *testing.T) {
 	t.Helper()
 	_, err := testDB.Exec(`TRUNCATE TABLE investments, investors, funds RESTART IDENTITY CASCADE`)
@@ -127,381 +345,196 @@ func requestJSON(t *testing.T, method, path string, body any) (*http.Response, [
 	return resp, respBody
 }
 
+func expectStatus(t *testing.T, resp *http.Response, body []byte, wantStatus int) {
+	t.Helper()
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("status = %d, want %d, body = %s", resp.StatusCode, wantStatus, string(body))
+	}
+}
+
+func decodeJSON[T any](t *testing.T, body []byte) T {
+	t.Helper()
+
+	var out T
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode JSON: %v, body = %s", err, string(body))
+	}
+	return out
+}
+
+func expectError(t *testing.T, body []byte, wantCode string, wantField string) {
+	t.Helper()
+
+	errEnvelope := decodeJSON[apiresponse.ErrorEnvelope](t, body)
+	if errEnvelope.Error.Code != wantCode {
+		t.Fatalf("code = %s, want %s", errEnvelope.Error.Code, wantCode)
+	}
+	if wantField != "" && errEnvelope.Error.Fields[wantField] == "" {
+		t.Fatalf("expected %s validation field", wantField)
+	}
+}
+
 func createFund(t *testing.T, name string) apiresponse.Fund {
 	t.Helper()
-	resp, body := requestJSON(t, http.MethodPost, "/funds", request.CreateFundRequest{
-		Name:          name,
-		VintageYear:   2024,
-		TargetSizeUSD: mustMoney(t, "250000000.00"),
-		Status:        enum.FundStatusFundraising.String(),
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
 
-	var fund apiresponse.Fund
-	if err := json.Unmarshal(body, &fund); err != nil {
-		t.Fatalf("decode fund: %v", err)
-	}
-	return fund
+	resp, body := requestJSON(t, http.MethodPost, "/funds", validCreateFundRequest(name))
+	expectStatus(t, resp, body, http.StatusCreated)
+	return decodeJSON[apiresponse.Fund](t, body)
 }
 
 func createInvestor(t *testing.T, name string, email string) apiresponse.Investor {
 	t.Helper()
-	resp, body := requestJSON(t, http.MethodPost, "/investors", request.CreateInvestorRequest{
-		Name:         name,
-		InvestorType: enum.InvestorTypeInstitution.String(),
-		Email:        email,
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
 
-	var investor apiresponse.Investor
-	if err := json.Unmarshal(body, &investor); err != nil {
-		t.Fatalf("decode investor: %v", err)
-	}
-	return investor
+	resp, body := requestJSON(t, http.MethodPost, "/investors", validCreateInvestorRequest(name, email))
+	expectStatus(t, resp, body, http.StatusCreated)
+	return decodeJSON[apiresponse.Investor](t, body)
 }
 
 func createInvestment(t *testing.T, fundID, investorID string, amount string, date string) apiresponse.Investment {
 	t.Helper()
 
-	resp, body := requestJSON(t, http.MethodPost, "/funds/"+fundID+"/investments", request.CreateInvestmentRequest{
-		InvestorID:     investorID,
-		AmountUSD:      mustMoney(t, amount),
-		InvestmentDate: mustDate(t, date),
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	var investment apiresponse.Investment
-	if err := json.Unmarshal(body, &investment); err != nil {
-		t.Fatalf("decode investment: %v", err)
-	}
-	return investment
+	resp, body := requestJSON(t, http.MethodPost, "/funds/"+fundID+"/investments", validCreateInvestmentRequest(investorID, amount, date))
+	expectStatus(t, resp, body, http.StatusCreated)
+	return decodeJSON[apiresponse.Investment](t, body)
 }
 
-func TestSwaggerRoute(t *testing.T) {
-	resetDB(t)
-
-	resp, _ := requestJSON(t, http.MethodGet, "/swagger", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
-	}
-}
-
-func TestHealthRoute(t *testing.T) {
-	resetDB(t)
-
-	resp, body := requestJSON(t, http.MethodGet, "/", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	var health apiresponse.Health
-	if err := json.Unmarshal(body, &health); err != nil {
-		t.Fatalf("decode health: %v", err)
-	}
-	if health.Status != "ok" {
-		t.Fatalf("status = %q", health.Status)
-	}
-}
-
-func TestUnknownRouteReturns404(t *testing.T) {
-	resetDB(t)
-
-	resp, body := requestJSON(t, http.MethodGet, "/does-not-exist", nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	var errEnvelope apiresponse.ErrorEnvelope
-	if err := json.Unmarshal(body, &errEnvelope); err != nil {
-		t.Fatalf("decode error envelope: %v", err)
-	}
-	if errEnvelope.Error.Code != "not_found" {
-		t.Fatalf("code = %s", errEnvelope.Error.Code)
-	}
-}
-
-func TestCreateFundAndValidation(t *testing.T) {
-	resetDB(t)
-
-	resp, body := requestJSON(t, http.MethodPost, "/funds", request.CreateFundRequest{
-		Name:          "Titanbay Growth Fund II",
+func validCreateFundRequest(name string) request.CreateFundRequest {
+	return request.CreateFundRequest{
+		Name:          name,
 		VintageYear:   2025,
-		TargetSizeUSD: mustMoney(t, "500000000.00"),
+		TargetSizeUSD: mustMoneyValue("500000000.00"),
 		Status:        enum.FundStatusFundraising.String(),
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
 	}
+}
 
-	var created apiresponse.Fund
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("decode: %v", err)
+func validUpdateFundRequest(id string, name string) request.UpdateFundRequest {
+	return request.UpdateFundRequest{
+		ID:            id,
+		Name:          name,
+		VintageYear:   2025,
+		TargetSizeUSD: mustMoneyValue("300000000.00"),
+		Status:        enum.FundStatusInvesting.String(),
 	}
-	if created.Name != "Titanbay Growth Fund II" {
-		t.Fatalf("name = %q", created.Name)
+}
+
+func validCreateInvestorRequest(name string, email string) request.CreateInvestorRequest {
+	return request.CreateInvestorRequest{
+		Name:         name,
+		InvestorType: enum.InvestorTypeInstitution.String(),
+		Email:        email,
 	}
-	if created.TargetSizeUSD.String() != "500000000.00" {
-		t.Fatalf("target_size_usd = %s", created.TargetSizeUSD.String())
+}
+
+func validCreateInvestmentRequest(investorID string, amount string, date string) request.CreateInvestmentRequest {
+	return request.CreateInvestmentRequest{
+		InvestorID:     investorID,
+		AmountUSD:      mustMoneyValue(amount),
+		InvestmentDate: date,
 	}
-	if created.CreatedAt.String() == "" {
+}
+
+func requireFundMatchesCreateRequest(t *testing.T, fund apiresponse.Fund, req request.CreateFundRequest) {
+	t.Helper()
+
+	if fund.Name != req.Name {
+		t.Fatalf("name = %q, want %q", fund.Name, req.Name)
+	}
+	if fund.VintageYear != req.VintageYear {
+		t.Fatalf("vintage_year = %d, want %d", fund.VintageYear, req.VintageYear)
+	}
+	if fund.TargetSizeUSD.String() != req.TargetSizeUSD.String() {
+		t.Fatalf("target_size_usd = %s, want %s", fund.TargetSizeUSD.String(), req.TargetSizeUSD.String())
+	}
+	if fund.Status.String() != req.Status {
+		t.Fatalf("status = %s, want %s", fund.Status, req.Status)
+	}
+	if fund.CreatedAt.String() == "" {
 		t.Fatal("expected created_at")
 	}
-
-	resp, body = requestJSON(t, http.MethodPost, "/funds", request.CreateFundRequest{
-		Name:          "Broken Fund",
-		VintageYear:   2025,
-		TargetSizeUSD: mustMoney(t, "500000000.00"),
-		Status:        "Draft",
-	})
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	var errEnvelope apiresponse.ErrorEnvelope
-	if err := json.Unmarshal(body, &errEnvelope); err != nil {
-		t.Fatalf("decode error envelope: %v", err)
-	}
-	if errEnvelope.Error.Code != "validation_error" {
-		t.Fatalf("code = %s", errEnvelope.Error.Code)
-	}
-	if errEnvelope.Error.Fields["status"] == "" {
-		t.Fatal("expected status validation field")
-	}
 }
 
-func TestGetFundNotFound(t *testing.T) {
-	resetDB(t)
-
-	resp, _ := requestJSON(t, http.MethodGet, "/funds/"+uuid.NewString(), nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d", resp.StatusCode)
-	}
-}
-
-func TestCreateInvestorAndDuplicateEmail(t *testing.T) {
-	resetDB(t)
-
-	resp, body := requestJSON(t, http.MethodPost, "/investors", request.CreateInvestorRequest{
-		Name:         "CalPERS",
-		InvestorType: enum.InvestorTypeInstitution.String(),
-		Email:        "privateequity@calpers.ca.gov",
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	var investor apiresponse.Investor
-	if err := json.Unmarshal(body, &investor); err != nil {
-		t.Fatalf("decode investor: %v", err)
-	}
-	if investor.Email.String() != "privateequity@calpers.ca.gov" {
-		t.Fatalf("email = %q", investor.Email.String())
-	}
-
-	resp, body = requestJSON(t, http.MethodPost, "/investors", request.CreateInvestorRequest{
-		Name:         "CalPERS Two",
-		InvestorType: enum.InvestorTypeInstitution.String(),
-		Email:        "privateequity@calpers.ca.gov",
-	})
-	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	var errEnvelope apiresponse.ErrorEnvelope
-	if err := json.Unmarshal(body, &errEnvelope); err != nil {
-		t.Fatalf("decode error envelope: %v", err)
-	}
-	if errEnvelope.Error.Code != "conflict" {
-		t.Fatalf("code = %s", errEnvelope.Error.Code)
-	}
-}
-
-func TestEnumValidationFailures(t *testing.T) {
-	resetDB(t)
-
-	fund := createFund(t, "Status Validation Fund")
-
-	cases := []struct {
-		name      string
-		method    string
-		path      string
-		body      any
-		wantField string
-	}{
-		{
-			name:   "create fund invalid status",
-			method: http.MethodPost,
-			path:   "/funds",
-			body: request.CreateFundRequest{
-				Name:          "Invalid Fund",
-				VintageYear:   2025,
-				TargetSizeUSD: mustMoney(t, "1000000.00"),
-				Status:        "Draft",
-			},
-			wantField: "status",
-		},
-		{
-			name:   "update fund invalid status",
-			method: http.MethodPut,
-			path:   "/funds",
-			body: request.UpdateFundRequest{
-				ID:            fund.ID.String(),
-				Name:          "Status Validation Fund",
-				VintageYear:   2025,
-				TargetSizeUSD: mustMoney(t, "2000000.00"),
-				Status:        "Draft",
-			},
-			wantField: "status",
-		},
-		{
-			name:   "create investor invalid type",
-			method: http.MethodPost,
-			path:   "/investors",
-			body: request.CreateInvestorRequest{
-				Name:         "Invalid Investor",
-				InvestorType: "Draft",
-				Email:        "invalid@example.com",
-			},
-			wantField: "investor_type",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			resp, body := requestJSON(t, tc.method, tc.path, tc.body)
-			if resp.StatusCode != http.StatusBadRequest {
-				t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-			}
-
-			var errEnvelope apiresponse.ErrorEnvelope
-			if err := json.Unmarshal(body, &errEnvelope); err != nil {
-				t.Fatalf("decode error envelope: %v", err)
-			}
-			if errEnvelope.Error.Code != "validation_error" {
-				t.Fatalf("code = %s", errEnvelope.Error.Code)
-			}
-			if got := errEnvelope.Error.Fields[tc.wantField]; got == "" {
-				t.Fatalf("expected %s validation field", tc.wantField)
-			}
-		})
-	}
-}
-
-func TestInvestmentsFlow(t *testing.T) {
-	resetDB(t)
-
-	fund := createFund(t, "Titanbay Growth Fund I")
-	investor := createInvestor(t, "Goldman Sachs Asset Management", "investments@example.com")
-
-	investment := createInvestment(t, fund.ID.String(), investor.ID.String(), "75000000.00", "2024-09-22")
-	if investment.FundID != fund.ID {
-		t.Fatalf("fund_id = %s, want %s", investment.FundID, fund.ID)
-	}
-	if investment.InvestorID != investor.ID {
-		t.Fatalf("investor_id = %s, want %s", investment.InvestorID, investor.ID)
-	}
-	if investment.AmountUSD.String() != "75000000.00" {
-		t.Fatalf("amount = %s", investment.AmountUSD.String())
-	}
-	if investment.InvestmentDate.String() != "2024-09-22" {
-		t.Fatalf("investment_date = %s", investment.InvestmentDate.String())
-	}
-
-	resp, body := requestJSON(t, http.MethodGet, "/funds/"+fund.ID.String()+"/investments", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	var investments []apiresponse.Investment
-	if err := json.Unmarshal(body, &investments); err != nil {
-		t.Fatalf("decode investments: %v", err)
-	}
-	if len(investments) != 1 {
-		t.Fatalf("len = %d", len(investments))
-	}
-	if investments[0].ID != investment.ID {
-		t.Fatalf("id = %s, want %s", investments[0].ID, investment.ID)
-	}
-
-	resp, body = requestJSON(t, http.MethodPost, "/funds/"+fund.ID.String()+"/investments", request.CreateInvestmentRequest{
-		InvestorID:     uuid.NewString(),
-		AmountUSD:      mustMoney(t, "1000000.00"),
-		InvestmentDate: mustDate(t, "2024-09-23"),
-	})
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-
-	resp, body = requestJSON(t, http.MethodGet, "/funds/"+uuid.NewString()+"/investments", nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-}
-
-func mustDate(t *testing.T, raw string) string {
+func requireFundMatchesUpdateRequest(t *testing.T, fund apiresponse.Fund, req request.UpdateFundRequest) {
 	t.Helper()
-	date, err := vo.ParseDate(raw)
-	if err != nil {
-		t.Fatalf("parse date: %v", err)
+
+	if fund.ID.String() != req.ID {
+		t.Fatalf("id = %s, want %s", fund.ID, req.ID)
 	}
-	return date.String()
+	requireFundMatchesCreateRequest(t, fund, request.CreateFundRequest{
+		Name:          req.Name,
+		VintageYear:   req.VintageYear,
+		TargetSizeUSD: req.TargetSizeUSD,
+		Status:        req.Status,
+	})
 }
 
-func mustMoney(t *testing.T, raw string) vo.Money {
+func requireInvestorMatchesCreateRequest(t *testing.T, investor apiresponse.Investor, req request.CreateInvestorRequest) {
 	t.Helper()
+
+	if investor.Name != req.Name {
+		t.Fatalf("name = %q, want %q", investor.Name, req.Name)
+	}
+	if investor.InvestorType.String() != req.InvestorType {
+		t.Fatalf("investor_type = %s, want %s", investor.InvestorType, req.InvestorType)
+	}
+	if investor.Email.String() != req.Email {
+		t.Fatalf("email = %q, want %q", investor.Email.String(), req.Email)
+	}
+	if investor.CreatedAt.String() == "" {
+		t.Fatal("expected created_at")
+	}
+}
+
+func requireInvestmentMatchesCreateRequest(t *testing.T, investment apiresponse.Investment, fundID vo.ID, req request.CreateInvestmentRequest) {
+	t.Helper()
+
+	if investment.FundID != fundID {
+		t.Fatalf("fund_id = %s, want %s", investment.FundID, fundID)
+	}
+	if investment.InvestorID.String() != req.InvestorID {
+		t.Fatalf("investor_id = %s, want %s", investment.InvestorID, req.InvestorID)
+	}
+	if investment.AmountUSD.String() != req.AmountUSD.String() {
+		t.Fatalf("amount_usd = %s, want %s", investment.AmountUSD.String(), req.AmountUSD.String())
+	}
+	if investment.InvestmentDate.String() != req.InvestmentDate {
+		t.Fatalf("investment_date = %s, want %s", investment.InvestmentDate.String(), req.InvestmentDate)
+	}
+}
+
+func requireContainsFund(t *testing.T, funds []apiresponse.Fund, id vo.ID) {
+	t.Helper()
+	for _, fund := range funds {
+		if fund.ID == id {
+			return
+		}
+	}
+	t.Fatalf("fund %s not found in response", id)
+}
+
+func requireContainsInvestor(t *testing.T, investors []apiresponse.Investor, id vo.ID) {
+	t.Helper()
+	for _, investor := range investors {
+		if investor.ID == id {
+			return
+		}
+	}
+	t.Fatalf("investor %s not found in response", id)
+}
+
+func requireContainsInvestment(t *testing.T, investments []apiresponse.Investment, id vo.ID) {
+	t.Helper()
+	for _, investment := range investments {
+		if investment.ID == id {
+			return
+		}
+	}
+	t.Fatalf("investment %s not found in response", id)
+}
+
+func mustMoneyValue(raw string) vo.Money {
 	value, err := decimal.NewFromString(raw)
 	if err != nil {
-		t.Fatalf("decimal parse: %v", err)
+		panic(fmt.Sprintf("parse test money %q: %v", raw, err))
 	}
 	return vo.NewMoney(value)
-}
-
-func TestListEndpointsReturnRawArrays(t *testing.T) {
-	resetDB(t)
-
-	fund := createFund(t, "Titanbay Growth Fund III")
-	investor := createInvestor(t, "Institution One", "one@example.com")
-	createInvestment(t, fund.ID.String(), investor.ID.String(), "1000000.00", "2024-01-01")
-
-	resp, body := requestJSON(t, http.MethodGet, "/funds", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-	var funds []apiresponse.Fund
-	if err := json.Unmarshal(body, &funds); err != nil {
-		t.Fatalf("decode funds: %v", err)
-	}
-	if len(funds) != 1 {
-		t.Fatalf("funds len = %d", len(funds))
-	}
-
-	resp, body = requestJSON(t, http.MethodGet, "/investors", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-	var investors []apiresponse.Investor
-	if err := json.Unmarshal(body, &investors); err != nil {
-		t.Fatalf("decode investors: %v", err)
-	}
-	if len(investors) != 1 {
-		t.Fatalf("investors len = %d", len(investors))
-	}
-
-	resp, body = requestJSON(t, http.MethodGet, "/funds/"+fund.ID.String()+"/investments", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
-	}
-	var investments []apiresponse.Investment
-	if err := json.Unmarshal(body, &investments); err != nil {
-		t.Fatalf("decode investments: %v", err)
-	}
-	if len(investments) != 1 {
-		t.Fatalf("investments len = %d", len(investments))
-	}
 }
