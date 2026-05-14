@@ -16,12 +16,20 @@ Go REST API for managing private market funds, investors, and investor commitmen
 
 ## Run locally
 
+Prerequisites:
+
+- Docker with Docker Compose
+- Go 1.26+ if running commands outside Docker
+
+Start the API and PostgreSQL:
+
 ```bash
 docker compose up --build
 ```
 
 The API starts on `http://localhost:8080`.
 Swagger UI is available at `http://localhost:8080/swagger`.
+Health check is available at `http://localhost:8080/health`.
 
 ## Useful commands
 
@@ -30,6 +38,8 @@ make test
 make migrate-up
 make seed
 ```
+
+`docker compose up --build` runs PostgreSQL, waits for it to become healthy, starts the API, and applies Goose migrations on API startup.
 
 ## API scope
 
@@ -47,6 +57,50 @@ Only the 8 core endpoints are implemented:
 The transaction-related endpoints shown in the HTML spec are intentionally out of scope for this submission.
 
 See [Architecture Decision Records](docs/adr/README.md).
+
+## Requirement coverage
+
+| Requirement | Implementation |
+| --- | --- |
+| PostgreSQL schema and relationships | Goose migration creates `funds`, `investors`, and `investments` with UUID primary keys, foreign keys, uniqueness, CHECK constraints, and indexes. |
+| REST API with JSON responses | Fiber v3 exposes the 8 required REST endpoints and returns raw JSON objects/arrays for successful responses. |
+| Validation and error handling | Request DTOs validate UUIDs, enums, email, money, and dates; domain errors are rendered through one Fiber error handler. |
+| Local setup | `docker compose up --build` starts the database and API with migrations. |
+| Documentation | This README references the API scope, assumptions, design decisions, Swagger UI, and ADRs. |
+| Testing | Unit tests cover domain/value behavior; integration tests exercise the API against PostgreSQL via testcontainers-go. |
+
+## Domain model
+
+```mermaid
+erDiagram
+    FUND ||--o{ INVESTMENT : receives
+    INVESTOR ||--o{ INVESTMENT : makes
+
+    FUND {
+        uuid id PK
+        string name
+        int vintage_year
+        decimal target_size_usd
+        enum status
+        datetime created_at
+    }
+
+    INVESTOR {
+        uuid id PK
+        string name
+        enum investor_type
+        string email UK
+        datetime created_at
+    }
+
+    INVESTMENT {
+        uuid id PK
+        uuid investor_id FK
+        uuid fund_id FK
+        decimal amount_usd
+        date investment_date
+    }
+```
 
 ## Design decisions
 
@@ -75,6 +129,14 @@ See [Architecture Decision Records](docs/adr/README.md).
 - Multiple investment records from the same investor into the same fund are allowed.
 - `investment_date` is date-only in JSON.
 - Money fields are returned as JSON numbers, not strings.
+
+## Testing
+
+```bash
+make test
+```
+
+The test suite includes domain/unit tests and PostgreSQL-backed integration tests. Integration tests run migrations before exercising the API endpoints.
 
 ## AI usage
 
