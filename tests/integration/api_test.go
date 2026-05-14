@@ -322,6 +322,77 @@ func TestCreateInvestorAndDuplicateEmail(t *testing.T) {
 	}
 }
 
+func TestEnumValidationFailures(t *testing.T) {
+	resetDB(t)
+
+	fund := createFund(t, "Status Validation Fund")
+
+	cases := []struct {
+		name      string
+		method    string
+		path      string
+		body      any
+		wantField string
+	}{
+		{
+			name:   "create fund invalid status",
+			method: http.MethodPost,
+			path:   "/funds",
+			body: request.CreateFundRequest{
+				Name:          "Invalid Fund",
+				VintageYear:   2025,
+				TargetSizeUSD: mustMoney(t, "1000000.00"),
+				Status:        "Draft",
+			},
+			wantField: "status",
+		},
+		{
+			name:   "update fund invalid status",
+			method: http.MethodPut,
+			path:   "/funds",
+			body: request.UpdateFundRequest{
+				ID:            fund.ID.String(),
+				Name:          "Status Validation Fund",
+				VintageYear:   2025,
+				TargetSizeUSD: mustMoney(t, "2000000.00"),
+				Status:        "Draft",
+			},
+			wantField: "status",
+		},
+		{
+			name:   "create investor invalid type",
+			method: http.MethodPost,
+			path:   "/investors",
+			body: request.CreateInvestorRequest{
+				Name:         "Invalid Investor",
+				InvestorType: "Draft",
+				Email:        "invalid@example.com",
+			},
+			wantField: "investor_type",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, body := requestJSON(t, tc.method, tc.path, tc.body)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
+			}
+
+			var errEnvelope apiresponse.ErrorEnvelope
+			if err := json.Unmarshal(body, &errEnvelope); err != nil {
+				t.Fatalf("decode error envelope: %v", err)
+			}
+			if errEnvelope.Error.Code != "validation_error" {
+				t.Fatalf("code = %s", errEnvelope.Error.Code)
+			}
+			if got := errEnvelope.Error.Fields[tc.wantField]; got == "" {
+				t.Fatalf("expected %s validation field", tc.wantField)
+			}
+		})
+	}
+}
+
 func TestInvestmentsFlow(t *testing.T) {
 	resetDB(t)
 
