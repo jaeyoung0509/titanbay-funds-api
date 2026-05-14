@@ -1,0 +1,326 @@
+openapi: 3.0.3
+info:
+  title: Titanbay Private Markets API
+  version: 1.0.0
+  description: REST API for managing private market funds, investors, and investments.
+servers:
+  - url: http://localhost:8080
+paths:
+  /funds:
+    get:
+      summary: List funds
+      operationId: listFunds
+      responses:
+        "200":
+          description: List of funds
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Fund"
+    post:
+      summary: Create fund
+      operationId: createFund
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFundRequest"
+      responses:
+        "201":
+          description: Created fund
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Fund"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      summary: Update fund
+      operationId: updateFund
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFundRequest"
+      responses:
+        "200":
+          description: Updated fund
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Fund"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /funds/{id}:
+    get:
+      summary: Get fund by ID
+      operationId: getFund
+      parameters:
+        - $ref: "#/components/parameters/FundPathID"
+      responses:
+        "200":
+          description: Fund
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Fund"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /investors:
+    get:
+      summary: List investors
+      operationId: listInvestors
+      responses:
+        "200":
+          description: List of investors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Investor"
+    post:
+      summary: Create investor
+      operationId: createInvestor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvestorRequest"
+      responses:
+        "201":
+          description: Created investor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Investor"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /funds/{fund_id}/investments:
+    get:
+      summary: List investments for a fund
+      operationId: listInvestmentsByFund
+      parameters:
+        - $ref: "#/components/parameters/FundInvestmentsID"
+      responses:
+        "200":
+          description: List of investments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Investment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      summary: Create investment for a fund
+      operationId: createInvestment
+      parameters:
+        - $ref: "#/components/parameters/FundID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvestmentRequest"
+      responses:
+        "201":
+          description: Created investment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Investment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  parameters:
+    FundPathID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FundInvestmentsID:
+      name: fund_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Internal error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    Fund:
+      type: object
+      required: [id, name, vintage_year, target_size_usd, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        vintage_year:
+          type: integer
+        target_size_usd:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: [Fundraising, Investing, Closed]
+        created_at:
+          type: string
+          format: date-time
+    CreateFundRequest:
+      type: object
+      required: [name, vintage_year, target_size_usd, status]
+      properties:
+        name:
+          type: string
+        vintage_year:
+          type: integer
+        target_size_usd:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: [Fundraising, Investing, Closed]
+    UpdateFundRequest:
+      type: object
+      required: [id, name, vintage_year, target_size_usd, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        vintage_year:
+          type: integer
+        target_size_usd:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: [Fundraising, Investing, Closed]
+    Investor:
+      type: object
+      required: [id, name, investor_type, email, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        investor_type:
+          type: string
+          enum: [Individual, Institution, Family Office]
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+    CreateInvestorRequest:
+      type: object
+      required: [name, investor_type, email]
+      properties:
+        name:
+          type: string
+        investor_type:
+          type: string
+          enum: [Individual, Institution, Family Office]
+        email:
+          type: string
+          format: email
+    Investment:
+      type: object
+      required: [id, investor_id, fund_id, amount_usd, investment_date]
+      properties:
+        id:
+          type: string
+          format: uuid
+        investor_id:
+          type: string
+          format: uuid
+        fund_id:
+          type: string
+          format: uuid
+        amount_usd:
+          type: number
+          format: double
+        investment_date:
+          type: string
+          format: date
+    CreateInvestmentRequest:
+      type: object
+      required: [investor_id, amount_usd, investment_date]
+      properties:
+        investor_id:
+          type: string
+          format: uuid
+        amount_usd:
+          type: number
+          format: double
+        investment_date:
+          type: string
+          format: date
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [validation_error, not_found, conflict, internal_error]
+            message:
+              type: string
+            fields:
+              type: object
+              additionalProperties:
+                type: string
