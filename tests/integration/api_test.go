@@ -209,6 +209,23 @@ func TestHealthRoute(t *testing.T) {
 	}
 }
 
+func TestUnknownRouteReturns404(t *testing.T) {
+	resetDB(t)
+
+	resp, body := requestJSON(t, http.MethodGet, "/does-not-exist", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
+	}
+
+	var errEnvelope apiresponse.ErrorEnvelope
+	if err := json.Unmarshal(body, &errEnvelope); err != nil {
+		t.Fatalf("decode error envelope: %v", err)
+	}
+	if errEnvelope.Error.Code != "not_found" {
+		t.Fatalf("code = %s", errEnvelope.Error.Code)
+	}
+}
+
 func TestCreateFundAndValidation(t *testing.T) {
 	resetDB(t)
 

@@ -1,8 +1,10 @@
 package middleware
 
 import (
-	"github.com/gofiber/fiber/v3/middleware/requestid"
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/rs/zerolog"
 
 	domainerror "github.com/jaeyoung0509/titanbay-funds-api/internal/domain/error"
@@ -12,6 +14,12 @@ import (
 func NewErrorHandler(base zerolog.Logger) fiber.ErrorHandler {
 	return func(c fiber.Ctx, err error) error {
 		appErr := domainerror.As(err)
+		if appErr == nil || appErr.Kind == domainerror.KindInternal {
+			var fiberErr *fiber.Error
+			if errors.As(err, &fiberErr) && fiberErr.Code == fiber.StatusNotFound {
+				appErr = domainerror.NotFound("")
+			}
+		}
 		if appErr == nil {
 			appErr = domainerror.Internal(err)
 		}
