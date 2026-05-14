@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/jaeyoung0509/titanbay-funds-api/internal/app"
 	postgresadapter "github.com/jaeyoung0509/titanbay-funds-api/internal/adapter/postgres"
+	"github.com/jaeyoung0509/titanbay-funds-api/internal/app"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/platform"
 	"github.com/rs/zerolog"
 )
@@ -41,10 +43,10 @@ func main() {
 	}
 	defer database.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	startupCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	if err := platform.WaitForDB(ctx, database, 30, time.Second); err != nil {
+	if err := platform.WaitForDB(startupCtx, database, 30, time.Second); err != nil {
 		logger.Fatal().Err(err).Msg("wait for database")
 	}
 
@@ -53,14 +55,42 @@ func main() {
 	}
 
 	server := app.New(app.Dependencies{
-		Repo: postgresadapter.New(database),
+		Repo:   postgresadapter.New(database),
 		Logger: &logger,
 	})
 
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	listenErr := make(chan error, 1)
 	logger.Info().Str("port", cfg.Port).Msg("starting api")
-	if err := server.Listen(fmt.Sprintf(":%s", cfg.Port)); err != nil {
-		logger.Fatal().Err(err).Msg("listen")
+	go func() {
+		listenErr <- server.Listen(fmt.Sprintf(":%s", cfg.Port))
+	}()
+
+	select {
+	case err := <-listenErr:
+		if err != nil {
+			logger.Fatal().Err(err).Msg("listen")
+		}
+		logger.Info().Msg("api stopped")
+		return
+	case <-signalCtx.Done():
+		logger.Info().Msg("shutdown signal received")
 	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := server.ShutdownWithContext(shutdownCtx); err != nil {
+		logger.Fatal().Err(err).Msg("shutdown api")
+	}
+
+	if err := <-listenErr; err != nil {
+		logger.Fatal().Err(err).Msg("listen stopped")
+	}
+
+	logger.Info().Msg("api stopped")
 }
 
 func getenv(key, fallback string) string {

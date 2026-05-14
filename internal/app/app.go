@@ -3,6 +3,7 @@ package app
 import (
 	"io"
 	"path/filepath"
+	"time"
 
 	"github.com/gofiber/contrib/v3/swaggerui"
 	"github.com/gofiber/fiber/v3"
@@ -27,6 +28,9 @@ func New(deps Dependencies) *fiber.App {
 
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.NewErrorHandler(baseLogger),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	})
 	app.Use(recover.New())
 	app.Use(requestid.New())

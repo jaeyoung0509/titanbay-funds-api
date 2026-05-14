@@ -110,6 +110,7 @@ erDiagram
 - The code uses a small layered structure: domain types and validation, usecase services for application flow, and HTTP/PostgreSQL adapters for IO.
 - Error responses are driven by domain errors and rendered through a central Fiber error handler.
 - Request/response logs are emitted as structured zerolog events and are correlated with `X-Request-ID`.
+- The API handles `SIGINT` and `SIGTERM` with graceful shutdown and a 10 second timeout.
 
 ```json
 {
