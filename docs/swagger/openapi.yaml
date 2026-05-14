@@ -134,7 +134,7 @@ paths:
       summary: Create investment for a fund
       operationId: createInvestment
       parameters:
-        - $ref: "#/components/parameters/FundID"
+        - $ref: "#/components/parameters/FundInvestmentsID"
       requestBody:
         required: true
         content:
