@@ -78,14 +78,12 @@ See [Architecture Decision Records](docs/adr/README.md).
 
 ## AI usage
 
-AI tools were used to accelerate development, especially for scaffolding, README structure, edge-case review, and validation or error-handling design.
+I defined the implementation plan and final design decisions for this project. I used Codex with the GPT-5.4-mini model at `xhigh` reasoning to accelerate scaffolding, implementation, test code, and iterative validation.
 
-The final implementation decisions were reviewed manually, including:
+AI-generated suggestions were treated as drafts and then reviewed and adjusted manually to match the API specification and the implementation constraints. The final decisions included:
 
 - limiting the scope to the 8 core endpoints
 - using PostgreSQL constraints for data integrity
 - using decimal-backed money types instead of `float64`
 - returning raw success responses to match the provided API spec
 - using centralized error handling and request logging
-
-AI-generated suggestions were treated as drafts and adjusted to match the API specification and implementation constraints.
