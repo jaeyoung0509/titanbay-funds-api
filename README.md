@@ -4,10 +4,10 @@ Go REST API for managing private market funds, investors, and investor commitmen
 
 ## Stack
 
-- Go 1.26.2
+- Go 1.26+
 - Fiber v3
 - PostgreSQL
-- pgx via the `database/sql` stdlib driver
+- PostgreSQL access via `database/sql` using the pgx driver
 - Goose migrations
 - shopspring/decimal for monetary precision
 - zerolog for structured request/response and error logs
@@ -21,7 +21,7 @@ docker compose up --build
 ```
 
 The API starts on `http://localhost:8080`.
-Swagger is available at `http://localhost:8080/swagger`.
+Swagger UI is available at `http://localhost:8080/swagger/index.html`.
 
 ## Useful commands
 
@@ -46,14 +46,14 @@ Only the 8 core endpoints are implemented:
 
 The transaction-related endpoints shown in the HTML spec are intentionally out of scope for this submission.
 
-Architecture decisions are documented in [docs/adr](/Users/apple/Myproject/titanbay-funds-api/docs/adr/README.md).
+See [Architecture Decision Records](docs/adr/README.md).
 
 ## Design decisions
 
 - PostgreSQL enforces integrity through primary keys, foreign keys, unique constraints, and CHECK constraints.
 - Monetary values are stored as `NUMERIC(18,2)` and represented in Go with `decimal.Decimal`-backed custom types.
 - The API returns raw JSON objects and arrays, matching the spec examples, rather than wrapping successful responses.
-- The code is split into `domain` value objects, enums, entities, `port` interfaces, `usecase` services, and `postgres`/HTTP adapters.
+- The code uses a small layered structure: domain types and validation, usecase services for application flow, and HTTP/PostgreSQL adapters for IO.
 - Error responses are driven by domain errors and rendered through a central Fiber error handler.
 - Request/response logs are emitted as structured zerolog events and are correlated with `X-Request-ID`.
 
@@ -75,8 +75,17 @@ Architecture decisions are documented in [docs/adr](/Users/apple/Myproject/titan
 - Multiple investment records from the same investor into the same fund are allowed.
 - `investment_date` is date-only in JSON.
 - Money fields are returned as JSON numbers, not strings.
-- Fiber v3 is used throughout, with Swagger UI mounted at `/swagger`.
 
 ## AI usage
 
-This repository was built with AI assistance for scaffolding, implementation speed, and review of assumptions and edge cases.
+AI tools were used to accelerate development, especially for scaffolding, README structure, edge-case review, and validation or error-handling design.
+
+The final implementation decisions were reviewed manually, including:
+
+- limiting the scope to the 8 core endpoints
+- using PostgreSQL constraints for data integrity
+- using decimal-backed money types instead of `float64`
+- returning raw success responses to match the provided API spec
+- using centralized error handling and request logging
+
+AI-generated suggestions were treated as drafts and adjusted to match the API specification and implementation constraints.
