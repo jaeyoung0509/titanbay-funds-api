@@ -21,7 +21,7 @@ docker compose up --build
 ```
 
 The API starts on `http://localhost:8080`.
-Swagger UI is available at `http://localhost:8080/swagger/index.html`.
+Swagger UI is available at `http://localhost:8080/swagger`.
 
 ## Useful commands
 

@@ -192,6 +192,23 @@ func TestSwaggerRoute(t *testing.T) {
 	}
 }
 
+func TestHealthRoute(t *testing.T) {
+	resetDB(t)
+
+	resp, body := requestJSON(t, http.MethodGet, "/", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
+	}
+
+	var health apiresponse.Health
+	if err := json.Unmarshal(body, &health); err != nil {
+		t.Fatalf("decode health: %v", err)
+	}
+	if health.Status != "ok" {
+		t.Fatalf("status = %q", health.Status)
+	}
+}
+
 func TestCreateFundAndValidation(t *testing.T) {
 	resetDB(t)
 

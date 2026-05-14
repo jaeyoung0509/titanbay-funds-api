@@ -6,13 +6,13 @@ import (
 
 	"github.com/gofiber/contrib/v3/swaggerui"
 	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/rs/zerolog"
 
-	"github.com/jaeyoung0509/titanbay-funds-api/internal/port"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/handler"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/middleware"
+	"github.com/jaeyoung0509/titanbay-funds-api/internal/port"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/usecase"
 )
 
@@ -32,15 +32,20 @@ func New(deps Dependencies) *fiber.App {
 	app.Use(requestid.New())
 	app.Use(middleware.NewRequestLogger(baseLogger))
 
+	health := handler.NewHealthHandler()
 	swaggerFilePath := deps.SwaggerFilePath
 	if swaggerFilePath == "" {
 		swaggerFilePath = filepath.Join("docs", "swagger", "openapi.yaml")
 	}
-	app.Use(swaggerui.New(swaggerui.Config{
+	swagger := swaggerui.New(swaggerui.Config{
 		BasePath: "/",
 		Path:     "swagger",
 		FilePath: swaggerFilePath,
-	}))
+	})
+	app.Get("/", health.Check)
+	app.Get("/health", health.Check)
+	app.Get("/swagger", swagger)
+	app.Get("/docs/swagger/openapi.yaml", swagger)
 
 	funds := handler.NewFundHandler(usecase.NewFundService(deps.Repo))
 	investors := handler.NewInvestorHandler(usecase.NewInvestorService(deps.Repo))
