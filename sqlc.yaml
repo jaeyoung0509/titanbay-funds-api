@@ -9,3 +9,12 @@ sql:
         out: "internal/db/sqlc"
         sql_package: "database/sql"
         emit_json_tags: true
+        initialisms:
+          - "id"
+          - "usd"
+        overrides:
+          - db_type: "pg_catalog.numeric"
+            go_type:
+              import: "github.com/shopspring/decimal"
+              package: "decimal"
+              type: "Decimal"

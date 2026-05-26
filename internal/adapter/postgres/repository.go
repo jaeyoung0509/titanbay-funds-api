@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"strings"
 
-	domainerror "github.com/jaeyoung0509/titanbay-funds-api/internal/domain/error"
+	"github.com/jaeyoung0509/titanbay-funds-api/internal/db/sqlc"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/domain/entity"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/domain/enum"
+	domainerror "github.com/jaeyoung0509/titanbay-funds-api/internal/domain/error"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/domain/vo"
-	"github.com/jaeyoung0509/titanbay-funds-api/internal/db/sqlc"
 	"github.com/jaeyoung0509/titanbay-funds-api/internal/port"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -195,10 +195,7 @@ func mapInvestorRow(row sqlc.Investor) (entity.Investor, error) {
 }
 
 func mapInvestmentRow(row sqlc.Investment) (entity.Investment, error) {
-	date, err := vo.ParseDate(row.InvestmentDate)
-	if err != nil {
-		return entity.Investment{}, domainerror.Internal(fmt.Errorf("invalid investment date from db: %w", err))
-	}
+	date := vo.NewDate(row.InvestmentDate)
 
 	item, err := entity.NewInvestmentWithID(
 		vo.NewIDFromUUID(row.ID),
